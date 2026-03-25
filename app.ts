@@ -1,4 +1,5 @@
-import { createRouter, RouteDefinition, RouterOptions } from './router.ts'
+import { createRouter } from './router.ts'
+import type { RouteDefinition, RouterOptions } from './router.ts'
 
 export interface AppOptions {
 	mountPoint?: string | HTMLElement
@@ -8,7 +9,11 @@ export interface AppOptions {
 	onInit?: () => void | Promise<void>
 }
 
-export function createApp(options: AppOptions) {
+export interface App {
+	init: () => void
+}
+
+export function createApp(options: AppOptions): App {
 	const { mountPoint = '#app', routes, fallback, onError, onInit } = options
 
 	const outletElement = typeof mountPoint === 'string'

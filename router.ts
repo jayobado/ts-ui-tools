@@ -41,7 +41,14 @@ export interface RouterOptions {
 	fallback?: (context: RouteContext) => HTMLElement
 }
 
-export function createRouter(options: RouterOptions) {
+export interface Router {
+	navigateTo: (path: string) => void
+	back: () => void
+	forward: () => void
+	interceptLinks: () => void
+}
+
+export function createRouter(options: RouterOptions): Router {
 	const { outlet, routes, onError, fallback } = options
 
 	const compiled = routes.map(route => ({
@@ -140,7 +147,7 @@ export function createRouter(options: RouterOptions) {
 		})
 	}
 
-	window.addEventListener('popstate', () => {
+	self.addEventListener('popstate', () => {
 		render(location.pathname, location.search)
 	})
 
@@ -148,5 +155,3 @@ export function createRouter(options: RouterOptions) {
 
 	return { navigateTo, back, forward, interceptLinks }
 }
-
-export type Router = ReturnType<typeof createRouter>

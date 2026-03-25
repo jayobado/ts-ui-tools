@@ -4,7 +4,13 @@ let currentEffect: Effect | null = null
 let batching = false
 const pendingEffects = new Set<Effect>()
 
-export function signal<T>(initialValue: T) {
+export interface Signal<T> {
+	get: () => T
+	set: (value: T) => void
+	update: (fn: (current: T) => T) => void
+}
+
+export function signal<T>(initialValue: T): Signal<T> {
 	let value = initialValue
 	const subscribers = new Set<Effect>()
 
@@ -28,7 +34,6 @@ export function signal<T>(initialValue: T) {
 	return { get, set, update }
 }
 
-export type Signal<T> = ReturnType<typeof signal<T>>
 
 export function effect(fn: Effect): () => void {
 	const execute = () => {

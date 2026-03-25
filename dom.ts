@@ -1,4 +1,5 @@
-import { css, StyleObject } from './css.ts'
+import { css } from './css.ts'
+import type { StyleObject } from './css.ts'
 
 type Child = Node | string | number | null | undefined | false
 
@@ -108,6 +109,20 @@ export interface TdProps extends ElementProps {
 	rowSpan?: number
 }
 
+type El = (p?: ElementProps | null, ...c: Child[]) => HTMLElement
+type FormEl = (p?: FormProps | null, ...c: Child[]) => HTMLElement
+type LabelEl = (p?: LabelProps | null, ...c: Child[]) => HTMLElement
+type InputEl = (p?: InputProps | null) => HTMLElement
+type ButtonEl = (p?: ButtonProps | null, ...c: Child[]) => HTMLElement
+type SelectEl = (p?: SelectProps | null, ...c: Child[]) => HTMLElement
+type OptionEl = (p?: OptionProps | null, ...c: Child[]) => HTMLElement
+type TextareaEl = (p?: TextareaProps | null) => HTMLElement
+type ImgEl = (p?: ImgProps | null) => HTMLElement
+type AnchorEl = (p?: AnchorProps | null, ...c: Child[]) => HTMLElement
+type ThEl = (p?: ThProps | null, ...c: Child[]) => HTMLElement
+type TdEl = (p?: TdProps | null, ...c: Child[]) => HTMLElement
+type VoidEl = () => HTMLElement
+
 const eventMap: Record<string, string> = {
 	onClick: 'click',
 	onDblclick: 'dblclick',
@@ -178,59 +193,59 @@ function el<P extends ElementProps>(
 }
 
 // Layout
-export const div = (p?: ElementProps | null, ...c: Child[]) => el('div', p, ...c)
-export const section = (p?: ElementProps | null, ...c: Child[]) => el('section', p, ...c)
-export const article = (p?: ElementProps | null, ...c: Child[]) => el('article', p, ...c)
-export const aside = (p?: ElementProps | null, ...c: Child[]) => el('aside', p, ...c)
-export const header = (p?: ElementProps | null, ...c: Child[]) => el('header', p, ...c)
-export const footer = (p?: ElementProps | null, ...c: Child[]) => el('footer', p, ...c)
-export const main = (p?: ElementProps | null, ...c: Child[]) => el('main', p, ...c)
-export const nav = (p?: ElementProps | null, ...c: Child[]) => el('nav', p, ...c)
+export const div: El = (p?, ...c) => el('div', p, ...c)
+export const section: El = (p?, ...c) => el('section', p, ...c)
+export const article: El = (p?, ...c) => el('article', p, ...c)
+export const aside: El = (p?, ...c) => el('aside', p, ...c)
+export const header: El = (p?, ...c) => el('header', p, ...c)
+export const footer: El = (p?, ...c) => el('footer', p, ...c)
+export const main: El = (p?, ...c) => el('main', p, ...c)
+export const nav: El = (p?, ...c) => el('nav', p, ...c)
 
 // Text
-export const span = (p?: ElementProps | null, ...c: Child[]) => el('span', p, ...c)
-export const p = (p?: ElementProps | null, ...c: Child[]) => el('p', p, ...c)
-export const h1 = (p?: ElementProps | null, ...c: Child[]) => el('h1', p, ...c)
-export const h2 = (p?: ElementProps | null, ...c: Child[]) => el('h2', p, ...c)
-export const h3 = (p?: ElementProps | null, ...c: Child[]) => el('h3', p, ...c)
-export const h4 = (p?: ElementProps | null, ...c: Child[]) => el('h4', p, ...c)
-export const h5 = (p?: ElementProps | null, ...c: Child[]) => el('h5', p, ...c)
-export const h6 = (p?: ElementProps | null, ...c: Child[]) => el('h6', p, ...c)
-export const strong = (p?: ElementProps | null, ...c: Child[]) => el('strong', p, ...c)
-export const em = (p?: ElementProps | null, ...c: Child[]) => el('em', p, ...c)
-export const small = (p?: ElementProps | null, ...c: Child[]) => el('small', p, ...c)
-export const code = (p?: ElementProps | null, ...c: Child[]) => el('code', p, ...c)
-export const pre = (p?: ElementProps | null, ...c: Child[]) => el('pre', p, ...c)
+export const span: El = (p?, ...c) => el('span', p, ...c)
+export const p: El = (p?, ...c) => el('p', p, ...c)
+export const h1: El = (p?, ...c) => el('h1', p, ...c)
+export const h2: El = (p?, ...c) => el('h2', p, ...c)
+export const h3: El = (p?, ...c) => el('h3', p, ...c)
+export const h4: El = (p?, ...c) => el('h4', p, ...c)
+export const h5: El = (p?, ...c) => el('h5', p, ...c)
+export const h6: El = (p?, ...c) => el('h6', p, ...c)
+export const strong: El = (p?, ...c) => el('strong', p, ...c)
+export const em: El = (p?, ...c) => el('em', p, ...c)
+export const small: El = (p?, ...c) => el('small', p, ...c)
+export const code: El = (p?, ...c) => el('code', p, ...c)
+export const pre: El = (p?, ...c) => el('pre', p, ...c)
 
 // Lists
-export const ul = (p?: ElementProps | null, ...c: Child[]) => el('ul', p, ...c)
-export const ol = (p?: ElementProps | null, ...c: Child[]) => el('ol', p, ...c)
-export const li = (p?: ElementProps | null, ...c: Child[]) => el('li', p, ...c)
+export const ul: El = (p?, ...c) => el('ul', p, ...c)
+export const ol: El = (p?, ...c) => el('ol', p, ...c)
+export const li: El = (p?, ...c) => el('li', p, ...c)
 
 // Form
-export const form = (p?: FormProps | null, ...c: Child[]) => el('form', p, ...c)
-export const label = (p?: LabelProps | null, ...c: Child[]) => el('label', p, ...c)
-export const input = (p?: InputProps | null) => el('input', p)
-export const button = (p?: ButtonProps | null, ...c: Child[]) => el('button', p, ...c)
-export const select = (p?: SelectProps | null, ...c: Child[]) => el('select', p, ...c)
-export const option = (p?: OptionProps | null, ...c: Child[]) => el('option', p, ...c)
-export const textarea = (p?: TextareaProps | null) => el('textarea', p)
-export const fieldset = (p?: ElementProps | null, ...c: Child[]) => el('fieldset', p, ...c)
+export const form: FormEl = (p?, ...c) => el('form', p, ...c)
+export const label: LabelEl = (p?, ...c) => el('label', p, ...c)
+export const input: InputEl = (p?) => el('input', p)
+export const button: ButtonEl = (p?, ...c) => el('button', p, ...c)
+export const select: SelectEl = (p?, ...c) => el('select', p, ...c)
+export const option: OptionEl = (p?, ...c) => el('option', p, ...c)
+export const textarea: TextareaEl = (p?) => el('textarea', p)
+export const fieldset: El = (p?, ...c) => el('fieldset', p, ...c)
 
 // Media / navigation
-export const img = (p?: ImgProps | null) => el('img', p)
-export const a = (p?: AnchorProps | null, ...c: Child[]) => el('a', p, ...c)
-export const hr = (p?: ElementProps | null) => el('hr', p)
-export const br = () => el('br', null)
+export const img: ImgEl = (p?) => el('img', p)
+export const a: AnchorEl = (p?, ...c) => el('a', p, ...c)
+export const hr: El = (p?) => el('hr', p)
+export const br: VoidEl = () => el('br', null)
 
 // Table
-export const table = (p?: ElementProps | null, ...c: Child[]) => el('table', p, ...c)
-export const thead = (p?: ElementProps | null, ...c: Child[]) => el('thead', p, ...c)
-export const tbody = (p?: ElementProps | null, ...c: Child[]) => el('tbody', p, ...c)
-export const tfoot = (p?: ElementProps | null, ...c: Child[]) => el('tfoot', p, ...c)
-export const tr = (p?: ElementProps | null, ...c: Child[]) => el('tr', p, ...c)
-export const th = (p?: ThProps | null, ...c: Child[]) => el('th', p, ...c)
-export const td = (p?: TdProps | null, ...c: Child[]) => el('td', p, ...c)
+export const table: El = (p?, ...c) => el('table', p, ...c)
+export const thead: El = (p?, ...c) => el('thead', p, ...c)
+export const tbody: El = (p?, ...c) => el('tbody', p, ...c)
+export const tfoot: El = (p?, ...c) => el('tfoot', p, ...c)
+export const tr: El = (p?, ...c) => el('tr', p, ...c)
+export const th: ThEl = (p?, ...c) => el('th', p, ...c)
+export const td: TdEl = (p?, ...c) => el('td', p, ...c)
 
 export type ComponentFn<P extends Record<string, unknown> = Record<string, unknown>> =
 	(props: P) => HTMLElement
