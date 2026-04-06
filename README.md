@@ -8,8 +8,14 @@ An SPA framework toolkit for building dashboards and data-heavy UIs in pure Type
 - **DOM** — typed element factories that build real DOM nodes directly (`div`, `span`, `button`, `input` etc.)
 - **CSS** — atomic CSS-in-JS engine with pseudo-class and media query support
 - **Components** — `defineComponent` with scoped lifecycle and auto-disposed effects
+- **Scopes** — composable lifecycle containers for hooks — work inside and outside components
 - **Router** — client-side routing with params, guards, nested layouts, query strings
 - **Services** — pluggable data layer with typed adapters for tRPC, REST, and Connect-RPC
+- **Form handling** — submission and validation hooks using any Standard Schema library (`@jayobado/lolo-ui/form`)
+- **Data fetching** — `useQuery` and `useMutation` hooks with reactive re-fetching, retry, and scope support (`@jayobado/lolo-ui/query`)
+- **Components** — unstyled `FormField`, `FormGroup`, and `DataTable` helpers (`@jayobado/lolo-ui/components`)
+- **Interactive components** — unstyled `useModal`, `createToaster`, `useTooltip`, `useDropdown` (`@jayobado/lolo-ui/components`)
+- **Primitives** — `useMediaQuery`, `useLocalStorage`, `useDebounce`, `useInterval`, `useEventListener`, `usePagination`, `useSelection`, `useClipboard`, `createPortal`, `useClickOutside`, `useEscapeKey`, `useFocusTrap`, `useScrollLock`, `computePosition` (`@jayobado/lolo-ui/primitives`)
 
 ## What it is not
 
@@ -20,7 +26,7 @@ An SPA framework toolkit for building dashboards and data-heavy UIs in pure Type
 ## Requirements
 
 - Deno 1.40+ or a modern browser with ES module support
-- A server to serve your TypeScript files (see [ts-hono-deno](https://github.com/jayobado/ts-hono-deno))
+- A server to serve your TypeScript files (see [kiln](https://github.com/jayobado/kiln))
 
 ## Installation
 
@@ -52,7 +58,7 @@ export DENO_AUTH_TOKENS="ghp_yourtoken@raw.githubusercontent.com"
 <script type="module" src="/main.ts"></script>
 ```
 
-> Requires a server that transpiles `.ts` files — see [ts-hono-deno](https://github.com/jayobado/ts-hono-deno).
+> Requires a server that transpiles `.ts` files — see [kiln](https://github.com/jayobado/kiln).
 
 ### Vite
 ```typescript
@@ -321,19 +327,19 @@ const UserCard = defineComponent<{ name: string; role: string }>(
     )
   }
 )
-
-// Use it — returns an HTMLElement
-const card = UserCard({ name: 'Jane', role: 'Admin' })
-document.body.appendChild(card)
 ```
 
 ### `ComponentContext`
 
+`ComponentContext` extends `Scope`. See the [Scopes](#scopes) section for full details.
+
 | Method | Description |
 |---|---|
 | `onMount(fn)` | Called after the component is added to the DOM |
-| `onUnmount(fn)` | Called before the component is removed from the DOM |
+| `onUnmount(fn)` | Called before the component is removed (alias for `onCleanup`) |
 | `effect(fn)` | Reactive effect scoped to this component's lifetime |
+| `onCleanup(fn)` | Arbitrary cleanup function, runs on dispose |
+| `dispose()` | Tears down all effects and cleanup functions |
 
 ### `h()` — mount a component
 ```typescript
@@ -402,6 +408,71 @@ css({
   fontWeight:   700,   // → font-weight: 700 (no px)
   lineHeight:   1.5,   // → line-height: 1.5 (no px)
 })
+```
+
+## Scopes
+
+Scopes track effects and cleanup functions, disposing them all at once. Inside `defineComponent`, a scope is created automatically — hooks called during setup bind to it. Outside a component, you create a scope manually.
+
+### `createScope` — manual scope
+
+```typescript
+import { createScope } from '@lolo-ui'
+
+const scope = createScope()
+
+scope.effect(() => {
+  console.log('tracked effect')
+})
+
+scope.onCleanup(() => {
+  console.log('runs on dispose')
+})
+
+// Tears down all effects and cleanup functions
+scope.dispose()
+```
+
+### `runInScope` — implicit scope for multiple hooks
+
+```typescript
+import { createScope, runInScope } from '@lolo-ui'
+
+const scope = createScope()
+
+runInScope(scope, () => {
+  // All hooks called here bind to this scope automatically
+  const { submit } = useSubmit(...)
+  const { output } = useParse(...)
+})
+
+// Later — disposes everything created inside runInScope
+scope.dispose()
+```
+
+### How hooks resolve their scope
+
+Every hook follows the same resolution order:
+
+1. **Explicit scope** — if passed as an argument, it wins
+2. **Active scope** — set by `defineComponent` or `runInScope`
+3. **No scope** — the hook still works, but the caller is responsible for calling `dispose()` manually
+
+```typescript
+// Inside a component — scope is automatic
+const MyView = defineComponent((props, ctx) => {
+  const { submit } = useSubmit(options, callback)  // bound to component lifecycle
+  return div(null, ...)
+})
+
+// Standalone — explicit scope
+const scope = createScope()
+const { submit } = useSubmit(options, callback, scope)
+scope.dispose()
+
+// Standalone — no scope, manual cleanup
+const { submit, dispose } = useSubmit(options, callback)
+dispose()
 ```
 
 ## Router
@@ -576,7 +647,7 @@ const UsersView = defineComponent((_props, { onMount, effect }) => {
 ```typescript
 import { Adapters } from '@lolo-ui'
 
-// tRPC — works with ts-hono-deno server-side tRPC bridge
+// tRPC
 Adapters.createTrpcAdapter(services, { baseUrl: '/api' })
 
 // REST
@@ -609,6 +680,1081 @@ const myTransport: Transport = {
 }
 ```
 
+## Form handling
+
+The `@jayobado/lolo-ui/form` subpath provides hooks for form submission and validation using any [Standard Schema](https://github.com/standard-schema/standard-schema) compatible library (Valibot, Zod, ArkType, etc.).
+
+```typescript
+import { useSubmit, useParse, flatten } from '@jayobado/lolo-ui/form'
+```
+
+### `useSubmit` — form submission
+
+Handles schema validation, submission state, and error formatting. The submit callback is always the second argument. An optional third argument accepts an explicit scope.
+
+#### With Valibot
+
+```typescript
+import { useSubmit } from '@jayobado/lolo-ui/form'
+import * as v from 'valibot'
+
+const fields = { name: '', email: '' }
+
+const schema = v.object({
+  name: v.pipe(v.string(), v.minLength(1, 'Name is required')),
+  email: v.pipe(v.string(), v.email('Invalid email')),
+})
+
+const { submit, submitting, errors } = useSubmit(
+  { input: () => fields, schema: () => schema },
+  async (validated) => {
+    // validated is typed as { name: string; email: string }
+    await api.createUser(validated)
+  },
+)
+```
+
+#### With Zod
+
+```typescript
+import { useSubmit } from '@jayobado/lolo-ui/form'
+import * as z from 'zod'
+
+const fields = { name: '', email: '' }
+
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.email('Invalid email'),
+})
+
+const { submit, submitting, errors } = useSubmit(
+  { input: () => fields, schema: () => schema },
+  async (validated) => {
+    // validated is typed as { name: string; email: string }
+    await api.createUser(validated)
+  },
+)
+```
+
+#### Full component example
+
+```typescript
+import { defineComponent, signal, div, span, input, button, form } from '@lolo-ui'
+import { useSubmit, flatten } from '@jayobado/lolo-ui/form'
+import * as v from 'valibot'
+
+const LoginForm = defineComponent((_props, ctx) => {
+  const fields = { email: '', password: '' }
+
+  const schema = v.object({
+    email: v.pipe(v.string(), v.email('Invalid email')),
+    password: v.pipe(v.string(), v.minLength(8, 'Min 8 characters')),
+  })
+
+  let formElement: HTMLElement
+
+  const { submit, submitting, errors } = useSubmit(
+    {
+      form: () => formElement,
+      input: () => fields,
+      schema: () => schema,
+      formatErrors: flatten,
+    },
+    async (validated) => {
+      await api.login(validated)
+    },
+  )
+
+  const emailError = span(null)
+  const passwordError = span(null)
+  const submitBtn = button({ type: 'submit' }, 'Sign in')
+
+  ctx.effect(() => {
+    const errs = errors.get()
+    emailError.textContent = errs?.nested?.email?.[0] ?? ''
+    passwordError.textContent = errs?.nested?.password?.[0] ?? ''
+    submitBtn.textContent = submitting.get() ? 'Signing in...' : 'Sign in'
+    ;(submitBtn as HTMLButtonElement).disabled = submitting.get()
+  })
+
+  formElement = form(
+    { onSubmit: (e) => { e.preventDefault(); submit() } },
+    input({
+      type: 'email',
+      placeholder: 'Email',
+      onInput: (e) => { fields.email = (e.target as HTMLInputElement).value },
+    }),
+    emailError,
+    input({
+      type: 'password',
+      placeholder: 'Password',
+      onInput: (e) => { fields.password = (e.target as HTMLInputElement).value },
+    }),
+    passwordError,
+    submitBtn,
+  )
+
+  return formElement
+})
+```
+
+#### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `form` | `() => HTMLElement` | Getter returning form element — enables HTML5 validation |
+| `input` | `() => T` | Getter returning form data |
+| `schema` | `() => StandardSchemaV1` | Getter returning Standard Schema for validation |
+| `formatErrors` | `(issues) => TErrors` | Custom error formatter (default: raw issues array) |
+| `onErrors` | `(errors) => void` | Called when validation fails or submit sets errors |
+| `submitting` | `Signal<boolean>` | Injectable signal — share across hooks |
+| `submitted` | `Signal<boolean>` | Injectable signal |
+| `errors` | `Signal<TErrors>` | Injectable signal |
+
+#### Without schema
+
+```typescript
+const { submit, submitting } = useSubmit(
+  { input: () => fields },
+  async (data) => {
+    await api.save(data)
+  },
+)
+```
+
+#### Without input
+
+```typescript
+const { submit, submitting } = useSubmit(
+  {},
+  async () => {
+    await api.refresh()
+  },
+)
+```
+
+#### Shared state
+
+```typescript
+import { signal } from '@lolo-ui'
+
+const submitting = signal(false)
+
+// Both hooks share the same submitting signal — only one can submit at a time
+const formA = useSubmit({ submitting, input: () => fieldsA, schema: () => schemaA }, onSubmitA)
+const formB = useSubmit({ submitting, input: () => fieldsB, schema: () => schemaB }, onSubmitB)
+```
+
+#### HTML5 form validation
+
+Pass a getter that returns the form element. The getter is evaluated lazily when `submit()` is called, so it works even when the form element is created after `useSubmit`.
+
+```typescript
+let formElement: HTMLElement
+
+const { submit } = useSubmit(
+  {
+    form: () => formElement,
+    input: () => fields,
+    schema: () => schema,
+  },
+  async (validated) => { await api.save(validated) },
+)
+
+// Created after useSubmit — works because form option is a getter
+formElement = form(
+  { onSubmit: (e) => { e.preventDefault(); submit() } },
+  input({ type: 'email', required: true }),
+  button({ type: 'submit' }, 'Save'),
+)
+```
+
+If the element is a `<form>`, `checkValidity()` and `reportValidity()` are called before schema validation. If it's any other element, the check is skipped.
+
+### `useParse` — reactive validation
+
+Continuously validates input against a schema using an effect. Useful for pre-submit validation or real-time feedback.
+
+#### With Valibot
+
+```typescript
+import { useParse, flatten } from '@jayobado/lolo-ui/form'
+import * as v from 'valibot'
+
+const fields = { age: '' }
+
+const { output, errors } = useParse({
+  input: () => fields,
+  schema: () => v.object({ age: v.number() }),
+  formatErrors: flatten,
+})
+```
+
+#### With Zod
+
+```typescript
+import { useParse, flatten } from '@jayobado/lolo-ui/form'
+import * as z from 'zod'
+
+const fields = { age: '' }
+
+const { output, errors } = useParse({
+  input: () => fields,
+  schema: () => z.object({ age: z.number() }),
+  formatErrors: flatten,
+})
+```
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `output` | `Signal<T \| undefined>` | Validated output (undefined if invalid) |
+| `errors` | `Signal<TErrors \| undefined>` | Formatted errors (undefined if valid) |
+| `dispose` | `() => void` | Stop reactive validation |
+
+### `flatten` — error formatter
+
+Converts Standard Schema issues into a flat structure with `root` and `nested` errors. Compatible with both Valibot's and Zod's issue format.
+
+```typescript
+import { flatten } from '@jayobado/lolo-ui/form'
+import type { FlatErrors } from '@jayobado/lolo-ui/form'
+
+const { errors } = useSubmit(
+  { input: () => fields, schema: () => schema, formatErrors: flatten },
+  async (validated) => { ... },
+)
+
+// errors.get()?.root     → string[] | undefined
+// errors.get()?.nested   → { [dotPath: string]: string[] } | undefined
+```
+
+## Data fetching
+
+The `@jayobado/lolo-ui/query` subpath provides hooks for data fetching and mutations. Both support the scope system — automatic cleanup inside components, explicit scope or manual `dispose()` outside.
+
+```typescript
+import { useQuery, useMutation } from '@jayobado/lolo-ui/query'
+```
+
+### `useQuery` — reactive data fetching
+
+Fetches data and re-fetches automatically when signal dependencies change. Any signals read inside the query function are tracked — no query keys needed.
+
+```typescript
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const { data, error, loading, refetch } = useQuery(
+  () => api.users.list({ page: 1 }),
+)
+```
+
+#### Reactive dependencies
+
+When a signal changes inside the query function, the query re-fetches automatically:
+
+```typescript
+import { signal } from '@lolo-ui'
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const page = signal(1)
+
+const { data, loading } = useQuery(
+  () => api.users.list({ page: page.get() }),
+)
+
+// Changing page triggers a re-fetch
+page.set(2)
+```
+
+#### Conditional fetching
+
+Use `enabled` to control when the query runs:
+
+```typescript
+import { signal } from '@lolo-ui'
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const userId = signal<string | null>(null)
+
+const { data, loading } = useQuery(
+  () => api.users.getById({ id: userId.get()! }),
+  { enabled: () => !!userId.get() },
+)
+
+// Query runs only after userId is set
+userId.set('123')
+```
+
+#### Retry
+
+```typescript
+const { data, error } = useQuery(
+  () => api.users.list({ page: 1 }),
+  { retry: 3, retryDelay: 2000 },
+)
+```
+
+#### With lolo-ui components
+
+```typescript
+import { defineComponent, signal, div, span, button } from '@lolo-ui'
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const UserList = defineComponent((_props, ctx) => {
+  const page = signal(1)
+
+  const { data, loading, error } = useQuery(
+    () => api.users.list({ page: page.get() }),
+  )
+
+  const container = div({ styles: { padding: 24 } })
+
+  ctx.effect(() => {
+    if (loading.get()) {
+      container.replaceChildren(span(null, 'Loading...'))
+      return
+    }
+    if (error.get()) {
+      container.replaceChildren(span(null, error.get()!.message))
+      return
+    }
+    const result = data.get()!
+    container.replaceChildren(
+      ...result.data.map(u => div(null, u.name)),
+      div(null,
+        button({ onClick: () => page.update(n => n - 1), disabled: page.get() <= 1 }, 'Prev'),
+        span(null, `Page ${page.get()}`),
+        button({ onClick: () => page.update(n => n + 1) }, 'Next'),
+      ),
+    )
+  })
+
+  return container
+})
+```
+
+#### Standalone usage
+
+```typescript
+import { createScope } from '@lolo-ui'
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const scope = createScope()
+
+const { data, refetch } = useQuery(
+  () => api.users.list({ page: 1 }),
+  {},
+  scope,
+)
+
+// Later
+scope.dispose()
+```
+
+#### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `enabled` | `() => boolean` | Getter controlling whether the query runs (default: `true`) |
+| `retry` | `number` | Number of retry attempts on failure (default: `0`) |
+| `retryDelay` | `number` | Milliseconds between retries (default: `1000`) |
+| `onError` | `(err: Error) => void` | Called when all retries are exhausted |
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `data` | `Signal<T \| undefined>` | Last successful result |
+| `error` | `Signal<Error \| undefined>` | Last error (cleared on next fetch) |
+| `loading` | `Signal<boolean>` | Whether a fetch is in progress |
+| `refetch` | `() => Promise<void>` | Manually trigger a re-fetch |
+| `dispose` | `() => void` | Stop reactive tracking and clean up |
+
+### `useMutation` — imperative async operations
+
+Wraps any async function with loading, error, and result state. Use for operations triggered by user actions that aren't form submissions — deletes, toggles, reordering, etc.
+
+```typescript
+import { useMutation } from '@jayobado/lolo-ui/query'
+
+const { mutate, loading, error, data } = useMutation(
+  (id: string) => api.users.delete({ id }),
+  {
+    onSuccess: () => { navigateTo('/users') },
+    onError: (err) => { toast.show(err.message) },
+  },
+)
+```
+
+#### Usage in a component
+
+```typescript
+import { defineComponent, signal, div, button, span } from '@lolo-ui'
+import { useMutation } from '@jayobado/lolo-ui/query'
+
+const DeleteButton = defineComponent<{ userId: string }>((props, ctx) => {
+  const { mutate, loading } = useMutation(
+    (id: string) => api.users.delete({ id }),
+    {
+      onSuccess: () => { window.location.href = '/users' },
+    },
+  )
+
+  const btn = button(null, 'Delete user')
+
+  ctx.effect(() => {
+    btn.textContent = loading.get() ? 'Deleting...' : 'Delete user'
+    ;(btn as HTMLButtonElement).disabled = loading.get()
+  })
+
+  btn.addEventListener('click', () => mutate(props.userId))
+
+  return btn
+})
+```
+
+#### Toggling state
+
+```typescript
+import { useMutation } from '@jayobado/lolo-ui/query'
+
+const project = signal<Project>(initialProject)
+
+const { mutate: toggleArchive, loading } = useMutation(
+  (id: string) => api.projects.toggleArchive({ id }),
+  {
+    onSuccess: (result) => { project.set(result) },
+  },
+)
+
+const btn = button(null, 'Archive')
+btn.addEventListener('click', () => toggleArchive(project.get().id))
+```
+
+#### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `retry` | `number` | Number of retry attempts on failure (default: `0`) |
+| `retryDelay` | `number` | Milliseconds between retries (default: `1000`) |
+| `onSuccess` | `(result: T) => void` | Called after successful execution |
+| `onError` | `(err: Error) => void` | Called after all retries are exhausted |
+| `onSettled` | `() => void` | Called after completion, regardless of outcome |
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `mutate` | `(...args) => Promise<T \| undefined>` | Trigger the mutation |
+| `data` | `Signal<T \| undefined>` | Last successful result |
+| `error` | `Signal<Error \| undefined>` | Last error |
+| `loading` | `Signal<boolean>` | Whether the mutation is in progress |
+| `reset` | `() => void` | Clear data, error, and loading state |
+| `dispose` | `() => void` | Clean up (calls reset) |
+
+### When to use what
+
+| Scenario | Hook |
+|---|---|
+| Fetch data on mount or when dependencies change | `useQuery` |
+| Submit a form with validation | `useSubmit` (from `@jayobado/lolo-ui/form`) |
+| Delete, toggle, or any non-form write operation | `useMutation` |
+| Real-time input validation | `useParse` (from `@jayobado/lolo-ui/form`) |
+
+## Components
+
+The `@jayobado/lolo-ui/components` subpath provides low-level helpers that reduce DOM boilerplate without imposing any styling or layout opinions. All components are unstyled by default — use `styles`, `class`, or both to control appearance.
+
+```typescript
+import { FormField, FormGroup, DataTable } from '@jayobado/lolo-ui/components'
+```
+
+### `FormField` — label + input + error
+
+Wraps a label, input (passed as children), and optional error message into a `div`. The label is linked to the input via the `for` attribute, and errors use `role="alert"` for accessibility.
+
+```typescript
+import { FormField } from '@jayobado/lolo-ui/components'
+import { input } from '@lolo-ui'
+
+FormField(
+  { label: 'Email', name: 'email', required: true },
+  input({ name: 'email', type: 'email', placeholder: 'you@example.com' }),
+)
+```
+
+#### Styled
+
+```typescript
+FormField(
+  {
+    label: 'Email',
+    name: 'email',
+    error: errors.get()?.nested?.email?.[0],
+    required: true,
+    styles: { display: 'flex', flexDirection: 'column', gap: 4 },
+    labelStyles: { fontSize: 14, fontWeight: 600, color: '#ccc' },
+    errorStyles: { fontSize: 12, color: '#ef4444' },
+  },
+  input({
+    name: 'email',
+    type: 'email',
+    styles: { padding: '8px 12px', borderRadius: 4, border: '1px solid #333' },
+  }),
+)
+```
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `label` | `string` | Label text (required) |
+| `name` | `string` | Links label `for` attribute to input |
+| `error` | `string` | Error message to display |
+| `required` | `boolean` | Appends ` *` to label text |
+| `class` | `string` | CSS class on wrapper div |
+| `styles` | `StyleObject` | Atomic CSS on wrapper div |
+| `labelStyles` | `StyleObject` | Atomic CSS on label |
+| `errorStyles` | `StyleObject` | Atomic CSS on error span |
+
+### `FormGroup` — fieldset + legend
+
+```typescript
+import { FormGroup, FormField } from '@jayobado/lolo-ui/components'
+import { input } from '@lolo-ui'
+
+FormGroup(
+  { legend: 'Billing address', styles: { border: '1px solid #333', padding: 16, borderRadius: 8 } },
+  FormField({ label: 'Street', name: 'street' }, input({ name: 'street' })),
+  FormField({ label: 'City', name: 'city' }, input({ name: 'city' })),
+  FormField({ label: 'Zip', name: 'zip' }, input({ name: 'zip' })),
+)
+```
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `legend` | `string` | Legend text |
+| `class` | `string` | CSS class on fieldset |
+| `styles` | `StyleObject` | Atomic CSS on fieldset |
+| `legendStyles` | `StyleObject` | Atomic CSS on legend |
+
+### `DataTable` — column-driven table
+
+```typescript
+import { DataTable } from '@jayobado/lolo-ui/components'
+import { button } from '@lolo-ui'
+import type { Column } from '@jayobado/lolo-ui/components'
+
+interface User { id: string; name: string; role: string }
+
+const columns: Column<User>[] = [
+  { key: 'name', header: 'Name' },
+  { key: 'role', header: 'Role' },
+  {
+    key: 'actions',
+    header: '',
+    render: (row) => button({ onClick: () => edit(row.id) }, 'Edit'),
+  },
+]
+
+DataTable({
+  columns,
+  rows: users.get(),
+  onRowClick: (row) => navigateTo(`/users/${row.id}`),
+  emptyText: 'No users found',
+})
+```
+
+#### Reactive table
+
+```typescript
+import { defineComponent, signal, div } from '@lolo-ui'
+import { useQuery } from '@jayobado/lolo-ui/query'
+import { DataTable } from '@jayobado/lolo-ui/components'
+
+const UserTable = defineComponent((_props, ctx) => {
+  const { data, loading } = useQuery(() => api.users.list({ page: 1 }))
+
+  const columns = [
+    { key: 'name', header: 'Name' },
+    { key: 'role', header: 'Role' },
+  ]
+
+  const container = div(null)
+
+  ctx.effect(() => {
+    if (loading.get()) {
+      container.replaceChildren(div(null, 'Loading...'))
+      return
+    }
+    container.replaceChildren(
+      DataTable({ columns, rows: data.get()?.data ?? [] }),
+    )
+  })
+
+  return container
+})
+```
+
+#### Column definition
+
+| Property | Type | Description |
+|---|---|---|
+| `key` | `string` | Property name to read from row (used when no `render`) |
+| `header` | `string` | Column header text |
+| `render` | `(row, index) => HTMLElement \| string` | Custom cell renderer |
+| `headerStyles` | `StyleObject` | Atomic CSS on `th` |
+| `cellStyles` | `StyleObject` | Atomic CSS on `td` |
+
+#### Table props
+
+| Prop | Type | Description |
+|---|---|---|
+| `columns` | `Column<T>[]` | Column definitions (required) |
+| `rows` | `T[]` | Data rows (required) |
+| `class` | `string` | CSS class on `table` |
+| `styles` | `StyleObject` | Atomic CSS on `table` |
+| `headerStyles` | `StyleObject` | Atomic CSS on header `tr` |
+| `rowStyles` | `StyleObject \| (row, index) => StyleObject` | Static or per-row styles |
+| `emptyText` | `string` | Text when rows is empty (default: `'No data'`) |
+| `rowKey` | `(row, index) => string \| number` | Key extraction for list rendering |
+| `onRowClick` | `(row, index) => void` | Row click handler |
+
+## Primitives
+
+The `@jayobado/lolo-ui/primitives` subpath provides low-level building blocks for interactive UI patterns. All primitives support the scope system — automatic cleanup inside components, explicit scope or manual disposal outside.
+
+```typescript
+import {
+  createPortal, useClickOutside, useEscapeKey,
+  useFocusTrap, useScrollLock, computePosition,
+  useMediaQuery, useLocalStorage, useDebounce, useDebounceFn,
+  useInterval, useEventListener, usePagination, useSelection, useClipboard,
+} from '@jayobado/lolo-ui/primitives'
+```
+
+### `createPortal` — render outside the component tree
+
+```typescript
+import { createPortal } from '@jayobado/lolo-ui/primitives'
+import { div } from '@lolo-ui'
+
+const { element, remove } = createPortal(
+  div(null, 'I am portaled'),
+)
+
+// Later
+remove()
+```
+
+### `useClickOutside` — detect clicks outside an element
+
+```typescript
+import { useClickOutside } from '@jayobado/lolo-ui/primitives'
+
+const menuEl = div(null, 'Menu content')
+
+const dispose = useClickOutside(
+  () => menuEl,
+  () => { console.log('clicked outside') },
+)
+```
+
+### `useEscapeKey` — listen for escape key
+
+```typescript
+import { useEscapeKey } from '@jayobado/lolo-ui/primitives'
+
+const dispose = useEscapeKey(() => {
+  console.log('escape pressed')
+})
+```
+
+### `useFocusTrap` — trap focus within a container
+
+```typescript
+import { useFocusTrap } from '@jayobado/lolo-ui/primitives'
+
+const dialog = div(null,
+  input({ type: 'text', placeholder: 'Name' }),
+  button(null, 'Submit'),
+)
+
+const release = useFocusTrap(() => dialog)
+
+// Later
+release()
+```
+
+### `useScrollLock` — prevent body scrolling
+
+```typescript
+import { useScrollLock } from '@jayobado/lolo-ui/primitives'
+
+const unlock = useScrollLock()
+
+// Later
+unlock()
+```
+
+### `computePosition` — position a floating element
+
+```typescript
+import { computePosition } from '@jayobado/lolo-ui/primitives'
+
+const { top, left, placement } = computePosition(triggerEl, floatingEl, {
+  placement: 'bottom',
+  offset: 8,
+})
+
+floatingEl.style.position = 'fixed'
+floatingEl.style.top = `${top}px`
+floatingEl.style.left = `${left}px`
+```
+
+#### Placement options
+
+`'top'` | `'bottom'` | `'left'` | `'right'` — defaults to `'bottom'`. If the preferred placement doesn't fit, it tries the opposite side, then the remaining two.
+
+### `useMediaQuery` — reactive media query
+
+```typescript
+import { useMediaQuery } from '@jayobado/lolo-ui/primitives'
+
+const { matches } = useMediaQuery('(max-width: 768px)')
+
+ctx.effect(() => {
+  container.replaceChildren(
+    matches.get() ? mobileLayout() : desktopLayout(),
+  )
+})
+```
+
+### `useLocalStorage` — persistent reactive state
+
+```typescript
+import { useLocalStorage } from '@jayobado/lolo-ui/primitives'
+
+const { value: theme, remove } = useLocalStorage('theme', 'dark')
+
+theme.set('light') // persisted automatically
+
+remove() // clear from storage and reset to initial
+```
+
+### `useDebounce` — debounce a reactive value
+
+```typescript
+import { signal } from '@lolo-ui'
+import { useDebounce } from '@jayobado/lolo-ui/primitives'
+
+const search = signal('')
+const { value: debouncedSearch } = useDebounce(() => search.get(), 300)
+```
+
+### `useDebounceFn` — debounce a callback
+
+```typescript
+import { useDebounceFn } from '@jayobado/lolo-ui/primitives'
+
+const { call: debouncedFetch, cancel } = useDebounceFn(
+  (query: string) => api.search({ query }),
+  300,
+)
+
+input({ onInput: (e) => debouncedFetch((e.target as HTMLInputElement).value) })
+```
+
+### `useInterval` — auto-disposing interval
+
+```typescript
+import { useInterval } from '@jayobado/lolo-ui/primitives'
+
+const { stop, restart } = useInterval(
+  () => api.notifications.poll(),
+  30_000,
+  { immediate: true },
+)
+```
+
+### `useEventListener` — type-safe event listener
+
+```typescript
+import { useEventListener } from '@jayobado/lolo-ui/primitives'
+
+useEventListener(window, 'resize', (e) => {
+  console.log(window.innerWidth)
+})
+
+useEventListener(myElement, 'click', (e) => {
+  console.log(e.clientX)
+})
+```
+
+### `usePagination` — page state management
+
+```typescript
+import { usePagination } from '@jayobado/lolo-ui/primitives'
+import { useQuery } from '@jayobado/lolo-ui/query'
+
+const pager = usePagination({ page: 1, pageSize: 20 })
+
+const { data } = useQuery(() =>
+  api.users.list({ page: pager.page.get(), perPage: pager.pageSize.get() }),
+)
+
+ctx.effect(() => {
+  const result = data.get()
+  if (result) pager.total.set(result.total)
+})
+```
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `page` | `Signal<number>` | Current page |
+| `pageSize` | `Signal<number>` | Items per page |
+| `total` | `Signal<number>` | Total item count |
+| `totalPages` | `Computed<number>` | Calculated total pages |
+| `hasNext` | `Computed<boolean>` | Whether next page exists |
+| `hasPrev` | `Computed<boolean>` | Whether previous page exists |
+| `next()` | `() => void` | Go to next page |
+| `prev()` | `() => void` | Go to previous page |
+| `goTo(n)` | `(page: number) => void` | Jump to specific page (clamped) |
+| `reset()` | `() => void` | Reset to initial page |
+
+### `useSelection` — track selected items
+
+```typescript
+import { useSelection } from '@jayobado/lolo-ui/primitives'
+
+const { isSelected, toggle, selectAll, clear, count, toArray } = useSelection<string>()
+
+toggle(user.id)
+
+ctx.effect(() => {
+  countEl.textContent = `${count.get()} selected`
+})
+
+const ids = toArray()
+```
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `selected` | `Signal<Set<T>>` | The selected items set |
+| `isSelected(item)` | `(item: T) => boolean` | Check if item is selected |
+| `toggle(item)` | `(item: T) => void` | Toggle selection |
+| `select(item)` | `(item: T) => void` | Add to selection |
+| `deselect(item)` | `(item: T) => void` | Remove from selection |
+| `selectAll(items)` | `(items: T[]) => void` | Replace selection with items |
+| `clear()` | `() => void` | Clear all selections |
+| `count` | `Computed<number>` | Number of selected items |
+| `toArray()` | `() => T[]` | Selected items as array |
+
+### `useClipboard` — copy to clipboard
+
+```typescript
+import { useClipboard } from '@jayobado/lolo-ui/primitives'
+import { button } from '@lolo-ui'
+
+const { copy, copied } = useClipboard({ resetDelay: 2000 })
+
+const btn = button(null, 'Copy email')
+
+btn.addEventListener('click', () => copy(user.email))
+
+ctx.effect(() => {
+  btn.textContent = copied.get() ? 'Copied!' : 'Copy email'
+})
+```
+
+## Interactive components
+
+The `@jayobado/lolo-ui/components` subpath also provides unstyled interactive components built on top of the primitives. All support the scope system and are styled entirely by you.
+
+### `useModal` — dialog with focus trapping and scroll lock
+
+```typescript
+import { useModal } from '@jayobado/lolo-ui/components'
+import { div, h2, p, button } from '@lolo-ui'
+
+const { open, close, isOpen } = useModal(
+  () => div(null,
+    h2(null, 'Are you sure?'),
+    p(null, 'This action cannot be undone.'),
+    div({ styles: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+      button({ onClick: close }, 'Cancel'),
+      button({ onClick: () => { handleDelete(); close() } }, 'Delete'),
+    ),
+  ),
+  {
+    backdropStyles: {
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    },
+    styles: {
+      background: '#1a1a2e', borderRadius: 8, padding: 24, minWidth: 400,
+    },
+  },
+)
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `class` | `string` | — | CSS class on content wrapper |
+| `styles` | `StyleObject` | — | Atomic CSS on content wrapper |
+| `backdropClass` | `string` | — | CSS class on backdrop |
+| `backdropStyles` | `StyleObject` | — | Atomic CSS on backdrop |
+| `closeOnBackdrop` | `boolean` | `true` | Close when clicking backdrop |
+| `closeOnEscape` | `boolean` | `true` | Close on escape key |
+| `trapFocus` | `boolean` | `true` | Trap tab navigation inside modal |
+| `lockScroll` | `boolean` | `true` | Prevent body scrolling |
+| `onOpen` | `() => void` | — | Called after modal opens |
+| `onClose` | `() => void` | — | Called after modal closes |
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `open` | `() => void` | Open the modal |
+| `close` | `() => void` | Close the modal |
+| `isOpen` | `Signal<boolean>` | Whether modal is open |
+| `dispose` | `() => void` | Close and clean up |
+
+### `createToaster` — toast notifications
+
+```typescript
+import { createToaster } from '@jayobado/lolo-ui/components'
+
+const toast = createToaster({
+  containerStyles: {
+    position: 'fixed', top: 16, right: 16, zIndex: 9999,
+    display: 'flex', flexDirection: 'column', gap: 8,
+  },
+  variantStyles: {
+    success: { background: '#065f46', color: '#fff', padding: '12px 16px', borderRadius: 6 },
+    error: { background: '#991b1b', color: '#fff', padding: '12px 16px', borderRadius: 6 },
+    info: { background: '#1e3a5f', color: '#fff', padding: '12px 16px', borderRadius: 6 },
+    warning: { background: '#92400e', color: '#fff', padding: '12px 16px', borderRadius: 6 },
+  },
+})
+
+toast.show('User created', { variant: 'success' })
+toast.show('Something went wrong', { variant: 'error', duration: 5000 })
+toast.show('Persistent message', { duration: 0 })
+```
+
+#### Toast options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `duration` | `number` | `3000` | Auto-dismiss delay in ms (`0` = persistent) |
+| `variant` | `ToastVariant` | `'info'` | `'info'` \| `'success'` \| `'warning'` \| `'error'` |
+| `class` | `string` | — | CSS class on toast element |
+| `styles` | `StyleObject` | — | Atomic CSS on toast element |
+| `dismissible` | `boolean` | `true` | Click to dismiss |
+
+### `useTooltip` — hover/focus tooltip
+
+```typescript
+import { useTooltip } from '@jayobado/lolo-ui/components'
+import { button } from '@lolo-ui'
+
+const btn = button(null, '⚙')
+
+useTooltip(btn, {
+  text: 'Settings',
+  placement: 'top',
+  styles: {
+    background: '#333', color: '#fff', padding: '4px 8px',
+    borderRadius: 4, fontSize: 12,
+  },
+})
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `text` | `string` | — | Tooltip text (required) |
+| `placement` | `Placement` | `'top'` | Preferred position |
+| `offset` | `number` | `8` | Gap between trigger and tooltip in px |
+| `showDelay` | `number` | `200` | Delay before showing in ms |
+| `hideDelay` | `number` | `100` | Delay before hiding in ms |
+| `class` | `string` | — | CSS class on tooltip |
+| `styles` | `StyleObject` | — | Atomic CSS on tooltip |
+
+### `useDropdown` — accessible dropdown menu
+
+```typescript
+import { useDropdown } from '@jayobado/lolo-ui/components'
+import { button } from '@lolo-ui'
+
+const btn = button(null, 'Actions')
+
+const { toggle, isOpen } = useDropdown(btn, {
+  items: [
+    { label: 'Edit', onSelect: () => edit() },
+    { label: 'Duplicate', onSelect: () => duplicate() },
+    { label: 'Archive', disabled: true },
+    { label: 'Delete', onSelect: () => remove() },
+  ],
+  placement: 'bottom',
+  styles: {
+    background: '#1a1a2e', border: '1px solid #333', borderRadius: 6,
+    minWidth: 160, overflow: 'hidden',
+  },
+  itemStyles: { padding: '8px 12px' },
+  activeItemStyles: { background: '#2a2a3e' },
+  disabledItemStyles: { opacity: 0.4, cursor: 'not-allowed' },
+})
+
+btn.addEventListener('click', () => toggle())
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `items` | `DropdownItem[]` | — | Menu items (required) |
+| `placement` | `Placement` | `'bottom'` | Preferred position |
+| `offset` | `number` | `4` | Gap between trigger and menu in px |
+| `class` | `string` | — | CSS class on menu container |
+| `styles` | `StyleObject` | — | Atomic CSS on menu container |
+| `itemClass` | `string` | — | CSS class on each item |
+| `itemStyles` | `StyleObject` | — | Atomic CSS on each item |
+| `activeItemStyles` | `StyleObject` | — | Styles for keyboard/hover active item |
+| `disabledItemStyles` | `StyleObject` | — | Styles for disabled items |
+| `onSelect` | `(item) => void` | — | Called when any item is selected |
+
+#### DropdownItem
+
+| Property | Type | Description |
+|---|---|---|
+| `label` | `string` | Display text |
+| `value` | `string` | Optional value for `onSelect` |
+| `disabled` | `boolean` | Prevents selection |
+| `onSelect` | `() => void` | Per-item callback |
+
+#### Return values
+
+| Property | Type | Description |
+|---|---|---|
+| `open` | `() => void` | Open the dropdown |
+| `close` | `() => void` | Close the dropdown |
+| `toggle` | `() => void` | Toggle open/close |
+| `isOpen` | `Signal<boolean>` | Whether dropdown is open |
+| `dispose` | `() => void` | Close and clean up |
+
 ## Project structure
 ```
 my-app/
@@ -627,21 +1773,9 @@ my-app/
             └── DashboardView.ts
 ```
 
-## Working with ts-hono-deno
+## Working with kiln
 
-`lolo-ui` is designed to be served by [ts-hono-deno](https://github.com/jayobado/ts-hono-deno) which handles TypeScript transpilation, static file serving, and tRPC integration.
-```typescript
-// server.ts
-import { ui } from '@ts-hono-deno'
-
-await ui({
-  host:      'localhost',
-  port:      3000,
-  fsRoot:    './public',
-  importMap: './deno.json',
-  strategy:  'lazy',
-})
-```
+`lolo-ui` is designed to be served by [kiln](https://github.com/jayobado/kiln) which handles TypeScript transpilation, HMR, static file serving, and deployment builds.
 
 ## Versioning
 ```bash

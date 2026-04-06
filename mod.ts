@@ -1,8 +1,9 @@
-export * from './signals.ts';
-export * from './css.ts';
-export * from './dom.ts';
-export * from './component.ts';
-export * from './router.ts';
-export * from './app.ts';
-export * as Adapters from './adapters/mod.ts';
-export * as Services from './services/mod.ts';
+export * from './signals.ts'
+export * from './css.ts'
+export * from './dom.ts'
+export * from './component.ts'
+export * from './router.ts'
+export * from './app.ts'
+export * from './scope.ts'
+export * as Adapters from './adapters/mod.ts'
+export * as Services from './services/mod.ts'

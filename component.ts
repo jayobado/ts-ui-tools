@@ -1,24 +1,23 @@
-import { effect as effectFn } from './signals.ts'
+import { createScope, runInScope } from './scope.ts'
+import type { Scope } from './scope.ts'
 
 type CleanupFn = () => void
 
-export interface ComponentContext {
+export interface ComponentContext extends Scope {
 	onMount: (fn: () => void | Promise<void>) => void
 	onUnmount: (fn: CleanupFn) => void
-	effect: (fn: () => void) => void
 }
 
 export interface ComponentDefinition<P extends Record<string, unknown> = Record<string, unknown>> {
-  (props: P): HTMLElement
-  _isComponent: true
+	(props: P): HTMLElement
+	_isComponent: true
 }
 
 // ─── Lifecycle registries ─────────────────────────────────────────────────
 // WeakMap so entries are garbage collected when the element is removed
 
 const mountCallbacks = new WeakMap<HTMLElement, Array<() => void | Promise<void>>>()
-const unmountCallbacks = new WeakMap<HTMLElement, CleanupFn[]>()
-const effectCleanups = new WeakMap<HTMLElement, CleanupFn[]>()
+const scopeMap = new WeakMap<HTMLElement, Scope>()
 
 // ─── Lifecycle runners — called by the router ─────────────────────────────
 
@@ -27,8 +26,7 @@ export function runMount(el: HTMLElement): void {
 }
 
 export function runUnmount(el: HTMLElement): void {
-	unmountCallbacks.get(el)?.forEach(fn => fn())
-	effectCleanups.get(el)?.forEach(fn => fn())
+	scopeMap.get(el)?.dispose()
 }
 
 // ─── defineComponent ──────────────────────────────────────────────────────
@@ -37,32 +35,25 @@ export function defineComponent<P extends Record<string, unknown> = Record<strin
 	setup: (props: P, ctx: ComponentContext) => HTMLElement
 ): ComponentDefinition<P> {
 	const factory = (props: P): HTMLElement => {
+		const scope = createScope()
 		const mounts: Array<() => void | Promise<void>> = []
-		const unmounts: CleanupFn[] = []
-		const cleanups: CleanupFn[] = []
 
 		const ctx: ComponentContext = {
+			effect: scope.effect,
+			onCleanup: scope.onCleanup,
+			dispose: scope.dispose,
 			onMount: fn => mounts.push(fn),
-
-			onUnmount: fn => unmounts.push(fn),
-
-			// Effects registered here are automatically disposed when the
-			// component unmounts — no manual cleanup needed in the component
-			effect: fn => {
-				const dispose = effectFn(fn)
-				cleanups.push(dispose)
-			},
+			onUnmount: fn => scope.onCleanup(fn),
 		}
 
-		const rootEl = setup(props, ctx)
+		const rootEl = runInScope(scope, () => setup(props, ctx))
 
 		mountCallbacks.set(rootEl, mounts)
-		unmountCallbacks.set(rootEl, unmounts)
-		effectCleanups.set(rootEl, cleanups)
+		scopeMap.set(rootEl, scope)
 
 		return rootEl
 	}
 
-	;(factory as ComponentDefinition<P>)._isComponent = true
+		; (factory as ComponentDefinition<P>)._isComponent = true
 	return factory as ComponentDefinition<P>
 }
