@@ -48,6 +48,19 @@ export interface Router {
 	interceptLinks: () => void
 }
 
+// ─── Global navigate ──────────────────────────────────────────────────────────
+
+let globalNavigate: ((path: string) => void) | null = null
+
+export function navigateTo(path: string): void {
+	if (!globalNavigate) {
+		throw new Error('[router] No router initialized. Call createApp().init() first.')
+	}
+	globalNavigate(path)
+}
+
+// ─── createRouter ─────────────────────────────────────────────────────────────
+
 export function createRouter(options: RouterOptions): Router {
 	const { outlet, routes, onError, fallback } = options
 
@@ -90,7 +103,7 @@ export function createRouter(options: RouterOptions): Router {
 			if (matched?.route.guards?.length) {
 				const guardResult = await runGuards(matched.route.guards, context)
 				if (guardResult !== true) {
-					navigateTo(guardResult)
+					navigate(guardResult)
 					return
 				}
 			}
@@ -127,7 +140,7 @@ export function createRouter(options: RouterOptions): Router {
 		}
 	}
 
-	function navigateTo(url: string): void {
+	function navigate(url: string): void {
 		history.pushState(null, '', url)
 		const { pathname, search } = new URL(url, location.origin)
 		render(pathname, search)
@@ -143,7 +156,7 @@ export function createRouter(options: RouterOptions): Router {
 			const href = target.getAttribute('href')
 			if (!href || href.startsWith('http') || href.startsWith('//')) return
 			e.preventDefault()
-			navigateTo(href)
+			navigate(href)
 		})
 	}
 
@@ -151,7 +164,10 @@ export function createRouter(options: RouterOptions): Router {
 		render(location.pathname, location.search)
 	})
 
+	// Set global navigate so views can use navigateTo()
+	globalNavigate = navigate
+
 	render(location.pathname, location.search)
 
-	return { navigateTo, back, forward, interceptLinks }
+	return { navigateTo: navigate, back, forward, interceptLinks }
 }
