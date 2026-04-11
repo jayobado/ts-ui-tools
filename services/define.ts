@@ -36,10 +36,12 @@ export function subscription<TInput, TOutput>(path: string): SubscriptionDef<TIn
 	return { _type: 'subscription', _input: undefined as TInput, _output: undefined as TOutput, path }
 }
 
+export type DomainDef = {
+	[method: string]: OperationDef
+}
+
 export type ServiceMap = {
-	[domain: string]: {
-		[method: string]: OperationDef
-	}
+	[domain: string]: DomainDef
 }
 
 type ResolveOperation<T> =

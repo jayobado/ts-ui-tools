@@ -25,6 +25,7 @@ export type {
 	ServiceMap,
 	ResolvedServices,
 	SubscriptionCallbacks,
+	DomainDef,
 	QueryDef,
 	MutationDef,
 	SubscriptionDef,

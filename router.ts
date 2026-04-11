@@ -19,6 +19,7 @@ export interface RouteDefinition {
 	layout?: (content: HTMLElement, context: RouteContext) => HTMLElement
 	guards?: GuardFn[]
 	meta?: Record<string, unknown>
+	title?: string | ((context: RouteContext) => string)
 }
 
 function pathToRegex(path: string): RegExp {
@@ -134,6 +135,13 @@ export function createRouter(options: RouterOptions): Router {
 			outlet.appendChild(viewEl)
 			currentEl = viewEl
 			runMount(viewEl)
+
+			// Set page title
+			if (matched?.route.title) {
+				document.title = typeof matched.route.title === 'function'
+					? matched.route.title(context)
+					: matched.route.title
+			}
 
 		} catch (err) {
 			onError ? onError(err) : console.error('[router]', err)
