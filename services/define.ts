@@ -53,7 +53,7 @@ type ResolveOperation<T> =
 	? (input: TInput, callbacks: SubscriptionCallbacks<TOutput>) => () => void
 	: never
 
-export type ResolvedDomain<T extends { [method: string]: OperationDef }> = {
+export type ResolvedDomain<T extends DomainDef> = {
 	[K in keyof T]: ResolveOperation<T[K]>
 }
 
@@ -65,6 +65,10 @@ export interface SubscriptionCallbacks<T> {
 	onData: (data: T) => void
 	onError?: (err: Error) => void
 	onComplete?: () => void
+}
+
+export function defineDomain<T extends DomainDef>(domain: T): T {
+	return domain
 }
 
 export function defineServices<T extends ServiceMap>(services: T): T {
